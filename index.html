@@ -4,10 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>云端儿童书馆</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         :root {
-            --primary-color: #6a1b9a; /* 品牌紫 */
-            --accent-color: #ffca28;  /* 活力黄 */
+            --primary-color: #6a1b9a;
+            --accent-color: #ffca28;
             --bg-color: #f3f4f6;
             --text-color: #333;
             --card-shadow: 0 4px 6px rgba(0,0,0,0.1);
@@ -21,7 +22,6 @@
             height: 100%;
         }
 
-        /* --- 通用组件 --- */
         .btn {
             padding: 10px 20px;
             border: none;
@@ -35,7 +35,6 @@
             gap: 5px;
         }
         .btn:active { transform: scale(0.98); }
-        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .btn-primary { background: var(--primary-color); color: white; }
         .btn-secondary { background: #eee; color: #555; }
         .btn-danger { background: #ef5350; color: white; }
@@ -53,239 +52,72 @@
         }
         input:focus, textarea:focus { border-color: var(--primary-color); }
 
-        /* --- 1. 登录层 --- */
+        /* 加载遮罩样式 */
+        #loading-mask {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255,255,255,0.9); z-index: 2000;
+            display: flex; justify-content: center; align-items: center;
+            font-size: 20px; color: var(--primary-color); font-weight: bold;
+        }
+
         #login-layer {
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            background: linear-gradient(135deg, #ede7f6 0%, #fff 100%);
-            position: fixed;
-            width: 100%;
-            z-index: 999;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            height: 100vh; background: linear-gradient(135deg, #ede7f6 0%, #fff 100%);
+            position: fixed; width: 100%; z-index: 999;
         }
         
         .login-box {
-            background: white;
-            padding: 50px 40px;
-            border-radius: 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
-            text-align: center;
-            width: 90%;
-            max-width: 380px;
+            background: white; padding: 50px 40px; border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.08); text-align: center;
+            width: 90%; max-width: 380px;
         }
         
-        .login-box h2 {
-            margin-bottom: 30px;
-            color: var(--primary-color);
-        }
+        .login-box h2 { margin-bottom: 30px; color: var(--primary-color); }
+        .login-input { margin-bottom: 20px; font-size: 16px; text-align: center; letter-spacing: 2px; }
 
-        .login-input {
-            margin-bottom: 20px;
-            font-size: 16px;
-            text-align: center;
-            letter-spacing: 2px;
-        }
-
-        /* --- 2. 首页书架层 --- */
-        #shelf-layer {
-            padding: 20px;
-            max-width: 1200px;
-            margin: 0 auto;
-            min-height: 100vh;
-        }
-
-        header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 30px;
-        }
-
-        .shelf-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-            gap: 25px;
-        }
-
-        .book-card {
-            background: white;
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: var(--card-shadow);
-            cursor: pointer;
-            transition: transform 0.2s;
-            position: relative;
-        }
+        #shelf-layer { padding: 20px; max-width: 1200px; margin: 0 auto; min-height: 100vh; }
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .shelf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 25px; }
+        .book-card { background: white; border-radius: 12px; overflow: hidden; box-shadow: var(--card-shadow); cursor: pointer; transition: transform 0.2s; position: relative; }
         .book-card:hover { transform: translateY(-5px); }
+        .book-cover { width: 100%; aspect-ratio: 3/4; object-fit: cover; background: #eee; }
+        .book-info { padding: 12px; text-align: center; }
+        .book-title { font-weight: bold; color: var(--text-color); margin: 0; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .empty-state { text-align: center; color: #999; margin-top: 100px; grid-column: 1 / -1; }
+
+        #admin-layer { padding: 20px; max-width: 800px; margin: 0 auto; padding-bottom: 100px; }
+        .admin-header { display: flex; flex-direction: column; margin-bottom: 20px; background: white; padding: 20px; border-radius: 10px; box-shadow: var(--card-shadow); gap: 15px; }
+        .admin-header-top { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+        .admin-code-bar { background: #e8eaf6; padding: 10px; border-radius: 6px; color: #3f51b5; font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
         
-        .book-cover {
-            width: 100%;
-            aspect-ratio: 3/4;
-            object-fit: cover;
-            background: #eee;
-        }
-        
-        .book-info {
-            padding: 12px;
-            text-align: center;
-        }
-        .book-title {
-            font-weight: bold;
-            color: var(--text-color);
-            margin: 0;
-            font-size: 16px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
+        .editor-section { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 5px solid var(--primary-color); }
+        .cover-preview { width: 100px; height: 133px; object-fit: cover; background: #eee; border-radius: 5px; margin-top: 10px; display: block; }
+        .page-list-item { display: flex; align-items: center; gap: 15px; background: #f9f9f9; padding: 10px; margin-bottom: 10px; border-radius: 8px; border: 1px solid #eee; }
+        .page-thumb { width: 60px; height: 60px; object-fit: cover; border-radius: 4px; background: #ddd; }
 
-        .empty-state {
-            text-align: center;
-            color: #999;
-            margin-top: 100px;
-            grid-column: 1 / -1;
-        }
+        #reader-layer { height: 100vh; width: 100vw; overflow: hidden; background: #fff; }
+        .book-layout { display: flex; height: 100%; }
+        .text-panel { flex: 1; padding: 40px; display: flex; flex-direction: column; justify-content: center; align-items: center; background: #fff; position: relative; z-index: 10; }
+        .image-panel { flex: 1.5; background: #f0f0f0; display: flex; justify-content: center; align-items: center; }
+        .image-panel img { max-width: 100%; max-height: 100%; object-fit: contain; }
+        .reader-controls { margin-top: 30px; display: flex; gap: 15px; align-items: center; }
+        .nav-btn-group { display: flex; gap: 10px; }
 
-        /* --- 3. 后台管理层 --- */
-        #admin-layer {
-            padding: 20px;
-            max-width: 800px;
-            margin: 0 auto;
-            padding-bottom: 100px;
-        }
-
-        .admin-header {
-            display: flex;
-            flex-direction: column;
-            margin-bottom: 20px;
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: var(--card-shadow);
-            gap: 15px;
-        }
-        
-        .admin-header-top {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        /* 管理员看到的卡密提示条 */
-        .admin-code-bar {
-            background: #e8eaf6;
-            padding: 10px;
-            border-radius: 6px;
-            color: #3f51b5;
-            font-size: 14px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .editor-section {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            border-left: 5px solid var(--primary-color);
-        }
-
-        .cover-preview {
-            width: 100px;
-            height: 133px;
-            object-fit: cover;
-            background: #eee;
-            border-radius: 5px;
-            margin-top: 10px;
-            display: block;
-        }
-
-        .page-list-item {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            background: #f9f9f9;
-            padding: 10px;
-            margin-bottom: 10px;
-            border-radius: 8px;
-            border: 1px solid #eee;
-        }
-        
-        .page-thumb {
-            width: 60px;
-            height: 60px;
-            object-fit: cover;
-            border-radius: 4px;
-            background: #ddd;
-        }
-
-        /* --- 4. 阅读器层 --- */
-        #reader-layer {
-            height: 100vh;
-            width: 100vw;
-            overflow: hidden;
-            background: #fff;
-        }
-
-        .book-layout {
-            display: flex;
-            height: 100%;
-        }
-
-        .text-panel {
-            flex: 1;
-            padding: 40px;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            background: #fff;
-            position: relative;
-            z-index: 10;
-        }
-
-        .image-panel {
-            flex: 1.5;
-            background: #f0f0f0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-        .image-panel img {
-            max-width: 100%;
-            max-height: 100%;
-            object-fit: contain;
-        }
-
-        .reader-controls {
-            margin-top: 30px;
-            display: flex;
-            gap: 15px;
-            align-items: center;
-        }
-
-        .nav-btn-group {
-            display: flex;
-            gap: 10px;
-        }
-
-        /* 移动端适配 */
         @media (max-width: 768px) {
             .book-layout { flex-direction: column; }
             .image-panel { flex: 1.2; order: 1; background: #000;}
             .text-panel { flex: 0.8; order: 2; padding: 20px; font-size: 16px;}
             .reader-controls { margin-top: 15px; flex-wrap: wrap; justify-content: center;}
+            .admin-header-top { flex-direction: column; align-items: flex-start; }
         }
     </style>
 </head>
 <body>
+    <div id="loading-mask" class="hidden">☁️ 正在连接云端书库...</div>
 
     <div id="login-layer">
         <div class="login-box">
-            <h2>☁️ 云端儿童书馆</h2>
+            <h2>☁️ 云端儿童书馆 (DB版)</h2>
             <input type="text" id="card-code" class="login-input" placeholder="请输入阅读卡密">
             <br>
             <button class="btn btn-primary" style="width:100%; font-size:16px;" onclick="handleLogin()">开启阅读之旅</button>
@@ -294,12 +126,10 @@
 
     <div id="shelf-layer" class="hidden">
         <header>
-            <h2 style="color: var(--primary-color);">📚 书架</h2>
+            <h2 style="color: var(--primary-color);">📚 云端书架</h2>
             <button class="btn btn-secondary" onclick="logout()">退出</button>
         </header>
-        
-        <div id="book-grid" class="shelf-grid">
-            </div>
+        <div id="book-grid" class="shelf-grid"></div>
     </div>
 
     <div id="admin-layer" class="hidden">
@@ -311,10 +141,9 @@
                     <button class="btn btn-secondary" onclick="logout()">退出登录</button>
                 </div>
             </div>
-            
             <div class="admin-code-bar">
-                <span>🔑 <strong>用户通用卡密：</strong> <span id="admin-view-code">VIP-8888-READ-NOW</span></span>
-                <button class="btn btn-copy" style="font-size:12px; padding:5px 10px;" onclick="copyUserCode()">复制卡密给家长</button>
+                <span>🔑 <strong>用户卡密：</strong> <span id="admin-view-code">VIP-8888-READ-NOW</span></span>
+                <button class="btn btn-copy" style="font-size:12px; padding:5px 10px;" onclick="copyUserCode()">复制</button>
             </div>
         </div>
 
@@ -326,21 +155,17 @@
         <div id="book-editor" class="hidden">
             <div class="editor-section">
                 <h4>1. 绘本基本信息</h4>
-                <label>名称：</label>
-                <input type="text" id="edit-book-title" placeholder="例如：勇敢的小狮子">
+                <label>名称：</label> <input type="text" id="edit-book-title">
                 <br><br>
-                <label>封面 (建议竖版)：</label>
-                <input type="file" id="edit-book-cover-input" accept="image/*" onchange="previewCover(this)">
+                <label>封面：</label> <input type="file" id="edit-book-cover-input" accept="image/*" onchange="previewCover(this)">
                 <img id="edit-book-cover-preview" class="cover-preview" src="">
                 <br>
-                <button class="btn btn-primary" style="margin-top:10px; width:100%" onclick="saveCurrentBookInfoOnly()">💾 保存基本信息</button>
+                <button class="btn btn-primary" style="margin-top:10px; width:100%" onclick="saveCurrentBookInfoOnly()">💾 暂存基本信息</button>
             </div>
-
             <div class="editor-section">
                 <h4>2. 内容页管理</h4>
                 <div id="editor-pages-area"></div>
             </div>
-
             <div class="editor-section" style="border-left-color: var(--accent-color);">
                 <h4>3. 新增一页</h4>
                 <input type="file" id="new-page-img" accept="image/*" style="margin-bottom: 10px;">
@@ -348,7 +173,6 @@
                 <br><br>
                 <button class="btn btn-primary" onclick="addPageToEditor()">+ 确认添加此页</button>
             </div>
-            
             <button class="btn btn-secondary" style="width:100%" onclick="closeEditor()">返回列表</button>
         </div>
     </div>
@@ -357,46 +181,42 @@
         <div class="book-layout">
             <div class="text-panel">
                 <div id="reader-text" style="font-size: 1.2em; line-height: 1.6; text-align: left; width: 100%;"></div>
-                
                 <div class="reader-controls">
                     <button class="btn btn-primary" id="play-btn" onclick="toggleAudio()">🔊 播放</button>
-                    
                     <div class="nav-btn-group">
                         <button class="btn btn-secondary" id="prev-btn" onclick="prevPage()">上一页</button>
                         <button class="btn btn-primary" id="next-btn" onclick="nextPage()">下一页</button>
                     </div>
                 </div>
-                
                 <button class="btn btn-secondary" style="margin-top: 20px; font-size: 12px;" onclick="closeReader()">退出阅读</button>
-
-                <div style="margin-top: 15px; color:#999; font-size: 14px;">
-                    第 <span id="reader-page-num">1</span> 页 / 共 <span id="reader-total">1</span> 页
-                </div>
+                <div style="margin-top: 15px; color:#999; font-size: 14px;">第 <span id="reader-page-num">1</span> 页 / 共 <span id="reader-total">1</span> 页</div>
             </div>
-            <div class="image-panel">
-                <img id="reader-img" src="" alt="">
-            </div>
+            <div class="image-panel"><img id="reader-img" src="" alt=""></div>
         </div>
     </div>
 
     <script>
-        // --- 核心配置 ---
-        // 1. 这里是唯一的复杂用户卡密
+        // ============================================
+        // ⚠️ Supabase 配置信息 (已自动填入) ⚠️
+        // ============================================
+        const SUPABASE_URL = 'https://dkfjkfutkkmxxsplejyx.supabase.co'; 
+        const SUPABASE_KEY = 'sb_publishable_5PdiGDQTQKcwI2NwtPsNHA_Dm4CJ-iu';
+        
+        // 初始化 Supabase
+        const { createClient } = supabase;
+        const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+
         const USER_ACCESS_CODE = "VIP-8888-READ-NOW"; 
-        // 2. 这里是管理员密码
         const ADMIN_ACCESS_CODE = "admintan"; 
 
-        // --- 数据逻辑 ---
-        let libraryData = JSON.parse(localStorage.getItem('my_picture_books_v2') || '[]');
+        let libraryData = []; // 数据存在内存里
         let currentEditingBook = null;
         let currentReadingBook = null;
         let currentReadingPage = 0;
         let audioPlayer = new Audio();
         let isPlaying = false;
 
-        // --- 初始化 ---
         window.onload = function() {
-            // 在后台界面显示这个卡密，方便管理员复制
             document.getElementById('admin-view-code').innerText = USER_ACCESS_CODE;
         };
 
@@ -407,21 +227,83 @@
             document.getElementById(layerId).classList.remove('hidden');
         }
 
-        // --- 1. 登录验证 (核心修改) ---
-        function handleLogin() {
+        // --- 核心修改：云端数据同步 ---
+
+        // 从云端加载数据 (Load)
+        async function fetchLibraryFromCloud() {
+            showLoading(true);
+            // 查询 ID 为 1 的数据行
+            const { data, error } = await db
+                .from('library_storage')
+                .select('data')
+                .eq('id', 1)
+                .single();
+            
+            showLoading(false);
+
+            if (error) {
+                // 如果是第一次使用，可能没有数据，尝试插入一行初始数据
+                if(error.code === 'PGRST116') { // The result contains 0 rows
+                    console.log('初始化新书库...');
+                    return true;
+                }
+                console.error('加载失败:', error);
+                alert("云端连接失败，请检查网络或配置。");
+                return false;
+            }
+
+            if (data && data.data) {
+                libraryData = data.data; // 更新内存数据
+                return true;
+            }
+            return true;
+        }
+
+        // 保存数据到云端 (Save)
+        async function saveLibraryToCloud() {
+            showLoading(true, "正在同步到云端...");
+            // 覆盖 ID 为 1 的数据行
+            const { error } = await db
+                .from('library_storage')
+                .upsert({ id: 1, data: libraryData });
+            
+            showLoading(false);
+
+            if (error) {
+                console.error('保存失败:', error);
+                alert("保存到云端失败！(可能图片太大了，建议压缩图片)");
+            } else {
+                console.log('云端同步成功');
+            }
+        }
+
+        function showLoading(show, text="☁️ 正在连接云端书库...") {
+            const el = document.getElementById('loading-mask');
+            if(show) {
+                el.innerText = text;
+                el.classList.remove('hidden');
+            } else {
+                el.classList.add('hidden');
+            }
+        }
+        
+        // -----------------------------
+
+        async function handleLogin() {
             const codeInput = document.getElementById('card-code').value.trim();
             
+            // 登录前先拉取最新数据
+            const success = await fetchLibraryFromCloud();
+            if(!success) return;
+
             if (codeInput === ADMIN_ACCESS_CODE) {
-                // 管理员登录
                 switchLayer('admin-layer');
                 renderAdminBookList();
             } else if (codeInput === USER_ACCESS_CODE) {
-                // 用户登录
                 switchLayer('shelf-layer');
                 renderShelf();
             } else {
-                // 验证失败
-                alert("卡密无效，请联系管理员获取正确卡密。");
+                alert("卡密无效，请联系管理员。");
             }
         }
 
@@ -429,56 +311,37 @@
             stopAudio();
             switchLayer('login-layer');
             document.getElementById('card-code').value = '';
+            libraryData = []; // 清空内存，防止缓存
         }
 
         function copyUserCode() {
-            navigator.clipboard.writeText(USER_ACCESS_CODE).then(() => {
-                alert("卡密已复制，请发送给用户：\n" + USER_ACCESS_CODE);
-            });
+            navigator.clipboard.writeText(USER_ACCESS_CODE).then(() => alert("卡密已复制"));
         }
 
-        // --- 2. 书架 (UI 净化) ---
         function renderShelf() {
             const container = document.getElementById('book-grid');
             container.innerHTML = '';
-
             if (libraryData.length === 0) {
-                // 空状态：去除了所有 admin 提示
-                container.innerHTML = `<div class="empty-state">
-                    <h3>📭 书架空空如也</h3>
-                    <p>老师正在精心准备绘本中，请稍后再来哦~</p>
-                </div>`;
+                container.innerHTML = `<div class="empty-state"><h3>📭 书架空空如也</h3><p>老师正在精心准备绘本中...</p></div>`;
                 return;
             }
-
             libraryData.forEach(book => {
                 const cover = book.cover || (book.pages.length > 0 ? book.pages[0].img : 'https://via.placeholder.com/300x400?text=No+Cover');
-                
                 const div = document.createElement('div');
                 div.className = 'book-card';
                 div.onclick = () => openReader(book.id);
-                div.innerHTML = `
-                    <img src="${cover}" class="book-cover">
-                    <div class="book-info">
-                        <div class="book-title">${book.title}</div>
-                    </div>
-                `;
+                div.innerHTML = `<img src="${cover}" class="book-cover"><div class="book-info"><div class="book-title">${book.title}</div></div>`;
                 container.appendChild(div);
             });
         }
 
-        function showShelf() {
-            switchLayer('shelf-layer');
-            renderShelf();
-        }
+        function showShelf() { switchLayer('shelf-layer'); renderShelf(); }
 
-        // --- 3. 后台管理逻辑 ---
         function renderAdminBookList() {
             document.getElementById('admin-book-list').classList.remove('hidden');
             document.getElementById('book-editor').classList.add('hidden');
             const container = document.getElementById('admin-books-container');
             container.innerHTML = '';
-
             libraryData.forEach((book, index) => {
                 const div = document.createElement('div');
                 div.style = "background:white; padding:15px; margin-bottom:10px; border-radius:8px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 2px 4px rgba(0,0,0,0.05);";
@@ -496,34 +359,24 @@
             });
         }
 
-        function createNewBook() {
-            currentEditingBook = { id: Date.now(), title: "", cover: "", pages: [] };
-            openEditorUI();
-        }
-
-        function editBook(index) {
-            currentEditingBook = JSON.parse(JSON.stringify(libraryData[index]));
-            openEditorUI();
-        }
-
-        function deleteBook(index) {
-            if(confirm('确定删除这本绘本吗？')) {
-                libraryData.splice(index, 1);
-                saveLibrary();
-                renderAdminBookList();
-            }
+        function createNewBook() { currentEditingBook = { id: Date.now(), title: "", cover: "", pages: [] }; openEditorUI(); }
+        function editBook(index) { currentEditingBook = JSON.parse(JSON.stringify(libraryData[index])); openEditorUI(); }
+        
+        async function deleteBook(index) { 
+            if(confirm('确定删除这本绘本吗？')) { 
+                libraryData.splice(index, 1); 
+                await saveLibraryToCloud(); // 删除后同步
+                renderAdminBookList(); 
+            } 
         }
 
         function openEditorUI() {
             document.getElementById('admin-book-list').classList.add('hidden');
             document.getElementById('book-editor').classList.remove('hidden');
-            
             document.getElementById('edit-book-title').value = currentEditingBook.title;
             document.getElementById('edit-book-cover-preview').src = currentEditingBook.cover || 'https://via.placeholder.com/100x133?text=Cover';
             document.getElementById('edit-book-cover-input').value = '';
-
             renderEditorPages();
-            
             document.getElementById('new-page-img').value = '';
             document.getElementById('new-page-text').value = '';
         }
@@ -539,10 +392,11 @@
             }
         }
 
-        function saveCurrentBookInfoOnly() {
+        async function saveCurrentBookInfoOnly() {
             currentEditingBook.title = document.getElementById('edit-book-title').value || "未命名绘本";
-            saveToStorageLogic();
-            alert("基本信息已保存");
+            updateLocalData();
+            await saveLibraryToCloud(); // 保存后同步
+            alert("基本信息已同步到云端");
         }
 
         function renderEditorPages() {
@@ -564,64 +418,40 @@
         function addPageToEditor() {
             const fileInput = document.getElementById('new-page-img');
             const textInput = document.getElementById('new-page-text');
-
-            if (fileInput.files.length === 0 || !textInput.value.trim()) {
-                alert("请完整填写本页图片和文案");
-                return;
-            }
-
+            if (fileInput.files.length === 0 || !textInput.value.trim()) { alert("请完整填写本页图片和文案"); return; }
             const reader = new FileReader();
-            reader.onload = function(e) {
-                currentEditingBook.pages.push({
-                    img: e.target.result,
-                    text: textInput.value.trim()
-                });
+            reader.onload = async function(e) {
+                // 注意：Base64 字符串如果太长可能会导致数据库保存变慢
+                currentEditingBook.pages.push({ img: e.target.result, text: textInput.value.trim() });
                 renderEditorPages();
-                saveToStorageLogic();
-                textInput.value = '';
-                fileInput.value = '';
+                
+                updateLocalData();
+                await saveLibraryToCloud(); // 添加页后立即同步
+
+                textInput.value = ''; fileInput.value = '';
             };
             reader.readAsDataURL(fileInput.files[0]);
         }
 
-        function deletePageFromEditor(idx) {
-            currentEditingBook.pages.splice(idx, 1);
-            renderEditorPages();
-            saveToStorageLogic();
+        async function deletePageFromEditor(idx) { 
+            currentEditingBook.pages.splice(idx, 1); 
+            renderEditorPages(); 
+            updateLocalData();
+            await saveLibraryToCloud(); // 删除页后立即同步
         }
+        
+        function closeEditor() { renderAdminBookList(); }
 
-        function closeEditor() {
-            renderAdminBookList();
-        }
-
-        function saveToStorageLogic() {
-            currentEditingBook.title = document.getElementById('edit-book-title').value || "未命名绘本";
+        function updateLocalData() {
             const existingIdx = libraryData.findIndex(b => b.id === currentEditingBook.id);
-            if (existingIdx >= 0) {
-                libraryData[existingIdx] = currentEditingBook;
-            } else {
-                libraryData.push(currentEditingBook);
-            }
-            saveLibrary();
+            if (existingIdx >= 0) libraryData[existingIdx] = currentEditingBook;
+            else libraryData.push(currentEditingBook);
         }
 
-        function saveLibrary() {
-            try {
-                localStorage.setItem('my_picture_books_v2', JSON.stringify(libraryData));
-            } catch (e) {
-                alert("存储空间不足(图片太大)，请压缩图片后再上传。");
-            }
-        }
-
-        // --- 4. 阅读器逻辑 ---
         function openReader(bookId) {
             currentReadingBook = libraryData.find(b => b.id === bookId);
             if (!currentReadingBook) return;
-            if (currentReadingBook.pages.length === 0) {
-                alert("这本书还没有内容哦！");
-                return;
-            }
-            
+            if (currentReadingBook.pages.length === 0) { alert("这本书还没有内容哦！"); return; }
             currentReadingPage = 0;
             switchLayer('reader-layer');
             loadReaderPage();
@@ -630,110 +460,44 @@
         function loadReaderPage() {
             const page = currentReadingBook.pages[currentReadingPage];
             const total = currentReadingBook.pages.length;
-
             document.getElementById('reader-img').src = page.img;
             document.getElementById('reader-text').innerText = page.text;
             document.getElementById('reader-page-num').innerText = currentReadingPage + 1;
             document.getElementById('reader-total').innerText = total;
-
             const prevBtn = document.getElementById('prev-btn');
             const nextBtn = document.getElementById('next-btn');
-
             prevBtn.disabled = (currentReadingPage === 0);
-            
             if (currentReadingPage === total - 1) {
                 nextBtn.innerText = "🎉 已完结";
-                nextBtn.onclick = () => {
-                    if(confirm("绘本读完了，要重新开始吗？")) {
-                        currentReadingPage = 0;
-                        loadReaderPage();
-                    } else {
-                        closeReader();
-                    }
-                };
+                nextBtn.onclick = () => { if(confirm("绘本读完了，要重新开始吗？")) { currentReadingPage = 0; loadReaderPage(); } else { closeReader(); } };
             } else {
-                nextBtn.innerText = "下一页";
-                nextBtn.onclick = nextPage;
+                nextBtn.innerText = "下一页"; nextBtn.onclick = nextPage;
             }
             stopAudio();
         }
 
-        function nextPage() {
-            if (currentReadingPage < currentReadingBook.pages.length - 1) {
-                currentReadingPage++;
-                loadReaderPage();
-            }
-        }
-
-        function prevPage() {
-            if (currentReadingPage > 0) {
-                currentReadingPage--;
-                loadReaderPage();
-            }
-        }
-
-        function closeReader() {
-            stopAudio();
-            switchLayer('shelf-layer');
-        }
-
-        function toggleAudio() {
-            if (isPlaying) stopAudio();
-            else playTTS();
-        }
+        function nextPage() { if (currentReadingPage < currentReadingBook.pages.length - 1) { currentReadingPage++; loadReaderPage(); } }
+        function prevPage() { if (currentReadingPage > 0) { currentReadingPage--; loadReaderPage(); } }
+        function closeReader() { stopAudio(); switchLayer('shelf-layer'); }
+        function toggleAudio() { if (isPlaying) stopAudio(); else playTTS(); }
 
         function playTTS() {
             const text = currentReadingBook.pages[currentReadingPage].text;
             const btn = document.getElementById('play-btn');
-            
             if (!text) return;
-
             btn.innerText = "⏳ 请求中...";
-            
             const baseUrl = "https://api.pearktrue.cn/api/freedub";
-            const params = new URLSearchParams({
-                text: text,
-                role: "zh-CN-XiaoyiNeural",
-                style: "cheerful"
-            });
-
-            fetch(`${baseUrl}?${params.toString()}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.code === 200 && data.data && data.data.audio_url) {
-                        audioPlayer.src = data.data.audio_url;
-                        audioPlayer.play().then(() => {
-                            isPlaying = true;
-                            btn.innerText = "⏸ 停止";
-                        }).catch(e => {
-                            console.error("播放失败", e);
-                            btn.innerText = "❌ 播放失败";
-                        });
-                    } else {
-                        alert("语音生成失败：" + (data.msg || "未知错误"));
-                        btn.innerText = "🔊 播放";
-                    }
-                })
-                .catch(err => {
-                    alert("网络错误，无法连接语音服务");
-                    btn.innerText = "🔊 播放";
-                });
-
-            audioPlayer.onended = function() {
-                isPlaying = false;
-                btn.innerText = "🔊 播放";
-                if (currentReadingPage < currentReadingBook.pages.length - 1) {
-                    setTimeout(nextPage, 1000);
-                }
-            };
+            const params = new URLSearchParams({ text: text, role: "zh-CN-XiaoyiNeural", style: "cheerful" });
+            fetch(`${baseUrl}?${params.toString()}`).then(response => response.json()).then(data => {
+                if (data.code === 200 && data.data && data.data.audio_url) {
+                    audioPlayer.src = data.data.audio_url;
+                    audioPlayer.play().then(() => { isPlaying = true; btn.innerText = "⏸ 停止"; }).catch(e => { btn.innerText = "❌ 播放失败"; });
+                } else { alert("语音生成失败"); btn.innerText = "🔊 播放"; }
+            }).catch(err => { alert("网络错误"); btn.innerText = "🔊 播放"; });
+            audioPlayer.onended = function() { isPlaying = false; btn.innerText = "🔊 播放"; if (currentReadingPage < currentReadingBook.pages.length - 1) { setTimeout(nextPage, 1000); } };
         }
 
-        function stopAudio() {
-            audioPlayer.pause();
-            audioPlayer.currentTime = 0;
-            isPlaying = false;
-            document.getElementById('play-btn').innerText = "🔊 播放";
-        }
+        function stopAudio() { audioPlayer.pause(); audioPlayer.currentTime = 0; isPlaying = false; document.getElementById('play-btn').innerText = "🔊 播放"; }
     </script>
 </body>
 </html>
