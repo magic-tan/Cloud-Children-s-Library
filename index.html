@@ -39,7 +39,6 @@
         .btn-secondary { background: #eee; color: #555; }
         .btn-danger { background: #ef5350; color: white; }
         .btn-success { background: #4caf50; color: white; }
-        .btn-warning { background: #ff9800; color: white; }
         .btn-copy { background: #e3f2fd; color: #1565c0; border: 1px solid #bbdefb;}
         
         .hidden { display: none !important; }
@@ -132,7 +131,7 @@
 
     <div id="login-layer">
         <div class="login-box">
-            <h2>☁️ 云端儿童书馆 (强力修复版)</h2>
+            <h2>☁️ 云端儿童书馆 (高清版)</h2>
             <input type="text" id="card-code" class="login-input" placeholder="请输入阅读卡密">
             <br>
             <button class="btn btn-primary" style="width:100%; font-size:16px;" onclick="handleLogin()">开启阅读之旅</button>
@@ -160,12 +159,7 @@
                 <span>🔑 <strong>用户卡密：</strong> <span id="admin-view-code">VIP-8888-READ-NOW</span></span>
                 <button class="btn btn-copy" style="font-size:12px; padding:5px 10px;" onclick="copyUserCode()">复制</button>
             </div>
-            
-            <div style="margin-top: 15px; border-top: 1px solid #eee; padding-top:10px;">
-                <button class="btn btn-danger" style="font-size:12px; padding: 5px 10px;" onclick="emergencyClearCloud()">⚠️ 修复：清空云端旧数据</button>
-                <span style="font-size:12px; color:#999;">(如果保存一直转圈或报错，请点此重置)</span>
             </div>
-        </div>
 
         <div id="admin-book-list">
             <button class="btn btn-primary" style="width:100%; margin-bottom:20px; padding: 15px;" onclick="createNewBook()">+ 新建绘本</button>
@@ -249,7 +243,8 @@
             document.getElementById(layerId).classList.remove('hidden');
         }
 
-        // --- 核心优化：极速压缩 (Width 450, Quality 0.3) ---
+        // --- 核心优化：均衡压缩 (Width 1024, Quality 0.6) ---
+        // 目标：图片大小控制在 100kb - 200kb 之间，保证清晰度
         function compressImage(file) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
@@ -261,8 +256,8 @@
                         const canvas = document.createElement('canvas');
                         const ctx = canvas.getContext('2d');
                         
-                        // 手机阅读 450px 足够了，体积非常小
-                        const MAX_WIDTH = 450; 
+                        // 清晰度优化：最大宽度调整为 1024px
+                        const MAX_WIDTH = 1024; 
                         let width = img.width;
                         let height = img.height;
                         if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
@@ -271,8 +266,8 @@
                         canvas.height = height;
                         ctx.drawImage(img, 0, 0, width, height);
                         
-                        // 质量降到 0.3，确保不超时
-                        resolve(canvas.toDataURL('image/jpeg', 0.3));
+                        // 质量设为 0.6，平衡体积和画质
+                        resolve(canvas.toDataURL('image/jpeg', 0.6));
                     };
                     img.onerror = reject;
                 };
@@ -296,47 +291,21 @@
         }
 
         async function saveLibraryToCloud() {
-            showLoading(true, "☁️ 正在上传到云端...", "(这可能需要几秒钟)");
+            showLoading(true, "☁️ 正在上传到云端...", "(图片质量已优化)");
             
-            // 检查数据大小
-            const jsonString = JSON.stringify(libraryData);
-            const sizeInMB = jsonString.length / 1024 / 1024;
-            if (sizeInMB > 5) {
-                showLoading(false);
-                alert("⚠️ 数据总量太大了 (" + sizeInMB.toFixed(2) + "MB)！\nSupabase 可能会拒绝保存。\n请尝试删除一些旧书，或者使用更小的图片。");
-                return;
-            }
-
             const { error } = await db.from('library_storage').upsert({ id: 1, data: libraryData });
             showLoading(false);
             
             if (error) {
                 console.error("保存错误:", error);
                 if(error.code === '57014') {
-                    alert("⚠️ 上传超时 (57014)\n您的网络较慢或数据太大。\n建议：点击后台顶部的【清空云端旧数据】按钮重置一下，再上传新书。");
+                    alert("⚠️ 上传超时！\n图片还是有点多，建议分批保存，或者删除一两本旧书。");
                 } else {
                     alert("保存失败！代码: " + error.code + "\n" + error.message);
                 }
             } else {
                 console.log('同步成功');
-                alert("✅ 保存成功！");
-            }
-        }
-
-        // --- 急救：清空云端数据 ---
-        async function emergencyClearCloud() {
-            if(!confirm("⚠️ 确定要清空云端所有绘本数据吗？\n\n如果之前的保存一直卡死，这样做可以修复问题，但旧书会全部丢失！")) return;
-            
-            showLoading(true, "正在重置数据库...");
-            const { error } = await db.from('library_storage').upsert({ id: 1, data: [] });
-            showLoading(false);
-            
-            if(error) {
-                alert("重置失败: " + error.message);
-            } else {
-                libraryData = []; // 清空本地
-                renderAdminBookList();
-                alert("✅ 重置成功！现在数据库是空的，请尝试上传一本新书。");
+                alert("✅ 保存成功！画质已提升。");
             }
         }
 
@@ -354,7 +323,6 @@
             const codeInput = document.getElementById('card-code').value.trim();
             const success = await fetchLibraryFromCloud();
             if(!success) {
-                // 如果拉取失败，允许进入后台去修复
                 if(codeInput === ADMIN_ACCESS_CODE) {
                     if(confirm("云端连接似乎有问题，是否强行进入后台？")) {
                         switchLayer('admin-layer'); renderAdminBookList(); return;
