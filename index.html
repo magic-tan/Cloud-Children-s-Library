@@ -38,6 +38,7 @@
         .btn-primary { background: var(--primary-color); color: white; }
         .btn-secondary { background: #eee; color: #555; }
         .btn-danger { background: #ef5350; color: white; }
+        .btn-success { background: #4caf50; color: white; } /* 新增保存按钮颜色 */
         .btn-copy { background: #e3f2fd; color: #1565c0; border: 1px solid #bbdefb;}
         
         .hidden { display: none !important; }
@@ -58,6 +59,7 @@
             background: rgba(255,255,255,0.9); z-index: 2000;
             display: flex; justify-content: center; align-items: center;
             font-size: 20px; color: var(--primary-color); font-weight: bold;
+            flex-direction: column; gap: 10px;
         }
 
         #login-layer {
@@ -103,6 +105,16 @@
         .reader-controls { margin-top: 30px; display: flex; gap: 15px; align-items: center; }
         .nav-btn-group { display: flex; gap: 10px; }
 
+        /* 底部固定保存区 */
+        .save-bar {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 2px dashed #ddd;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
         @media (max-width: 768px) {
             .book-layout { flex-direction: column; }
             .image-panel { flex: 1.2; order: 1; background: #000;}
@@ -113,11 +125,14 @@
     </style>
 </head>
 <body>
-    <div id="loading-mask" class="hidden">☁️ 正在连接云端书库...</div>
+    <div id="loading-mask" class="hidden">
+        <div id="loading-text">☁️ 正在连接云端书库...</div>
+        <div style="font-size:12px; font-weight:normal; color:#666;" id="loading-sub"></div>
+    </div>
 
     <div id="login-layer">
         <div class="login-box">
-            <h2>☁️ 云端儿童书馆 (DB版)</h2>
+            <h2>☁️ 云端儿童书馆 (极速版)</h2>
             <input type="text" id="card-code" class="login-input" placeholder="请输入阅读卡密">
             <br>
             <button class="btn btn-primary" style="width:100%; font-size:16px;" onclick="handleLogin()">开启阅读之旅</button>
@@ -159,9 +174,7 @@
                 <br><br>
                 <label>封面：</label> <input type="file" id="edit-book-cover-input" accept="image/*" onchange="previewCover(this)">
                 <img id="edit-book-cover-preview" class="cover-preview" src="">
-                <br>
-                <button class="btn btn-primary" style="margin-top:10px; width:100%" onclick="saveCurrentBookInfoOnly()">💾 暂存基本信息</button>
-            </div>
+                </div>
             <div class="editor-section">
                 <h4>2. 内容页管理</h4>
                 <div id="editor-pages-area"></div>
@@ -173,7 +186,11 @@
                 <br><br>
                 <button class="btn btn-primary" onclick="addPageToEditor()">+ 确认添加此页</button>
             </div>
-            <button class="btn btn-secondary" style="width:100%" onclick="closeEditor()">返回列表</button>
+            
+            <div class="save-bar">
+                <button class="btn btn-success" style="width:100%; padding: 15px; font-size: 16px;" onclick="saveCurrentBookInfoOnly()">💾 保存所有信息到云端</button>
+                <button class="btn btn-secondary" style="width:100%" onclick="closeEditor()">返回绘本列表</button>
+            </div>
         </div>
     </div>
 
@@ -197,24 +214,26 @@
 
     <script>
         // ============================================
-        // ⚠️ Supabase 配置信息 (已自动填入) ⚠️
+        // ⚠️ Supabase 配置 ⚠️
         // ============================================
         const SUPABASE_URL = 'https://dkfjkfutkkmxxsplejyx.supabase.co'; 
         const SUPABASE_KEY = 'sb_publishable_5PdiGDQTQKcwI2NwtPsNHA_Dm4CJ-iu';
         
-        // 初始化 Supabase
         const { createClient } = supabase;
         const db = createClient(SUPABASE_URL, SUPABASE_KEY);
 
         const USER_ACCESS_CODE = "VIP-8888-READ-NOW"; 
         const ADMIN_ACCESS_CODE = "admintan"; 
 
-        let libraryData = []; // 数据存在内存里
+        let libraryData = []; 
         let currentEditingBook = null;
         let currentReadingBook = null;
         let currentReadingPage = 0;
         let audioPlayer = new Audio();
         let isPlaying = false;
+        
+        // --- 核心优化：音频缓存池 ---
+        let audioCache = {}; 
 
         window.onload = function() {
             document.getElementById('admin-view-code').innerText = USER_ACCESS_CODE;
@@ -227,104 +246,76 @@
             document.getElementById(layerId).classList.remove('hidden');
         }
 
-        // --- 核心修改：云端数据同步 ---
+        // --- 图片压缩 ---
+        function compressImage(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = function(event) {
+                    const img = new Image();
+                    img.src = event.target.result;
+                    img.onload = function() {
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
+                        const MAX_WIDTH = 800;
+                        let width = img.width;
+                        let height = img.height;
+                        if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
+                        canvas.width = width; canvas.height = height;
+                        ctx.drawImage(img, 0, 0, width, height);
+                        resolve(canvas.toDataURL('image/jpeg', 0.6));
+                    };
+                    img.onerror = reject;
+                };
+                reader.onerror = reject;
+            });
+        }
 
-        // 从云端加载数据 (Load)
+        // --- 云端数据逻辑 ---
         async function fetchLibraryFromCloud() {
-            showLoading(true);
-            // 查询 ID 为 1 的数据行
-            const { data, error } = await db
-                .from('library_storage')
-                .select('data')
-                .eq('id', 1)
-                .single();
-            
+            showLoading(true, "☁️ 正在连接云端书库...");
+            const { data, error } = await db.from('library_storage').select('data').eq('id', 1).single();
             showLoading(false);
-
-            if (error) {
-                // 如果是第一次使用，可能没有数据，尝试插入一行初始数据
-                if(error.code === 'PGRST116') { // The result contains 0 rows
-                    console.log('初始化新书库...');
-                    return true;
-                }
-                console.error('加载失败:', error);
-                alert("云端连接失败，请检查网络或配置。");
-                return false;
-            }
-
-            if (data && data.data) {
-                libraryData = data.data; // 更新内存数据
-                return true;
-            }
+            if (error) { if(error.code === 'PGRST116') return true; console.error(error); alert("连接失败"); return false; }
+            if (data && data.data) { libraryData = data.data; return true; }
             return true;
         }
 
-        // 保存数据到云端 (Save)
         async function saveLibraryToCloud() {
-            showLoading(true, "正在同步到云端...");
-            // 覆盖 ID 为 1 的数据行
-            const { error } = await db
-                .from('library_storage')
-                .upsert({ id: 1, data: libraryData });
-            
+            showLoading(true, "☁️ 正在同步到云端...", "(图片会自动压缩)");
+            const { error } = await db.from('library_storage').upsert({ id: 1, data: libraryData });
             showLoading(false);
-
-            if (error) {
-                console.error('保存失败:', error);
-                alert("保存到云端失败！(可能图片太大了，建议压缩图片)");
-            } else {
-                console.log('云端同步成功');
-            }
+            if (error) { console.error(error); alert("保存失败！"); }
+            else { console.log('同步成功'); }
         }
 
-        function showLoading(show, text="☁️ 正在连接云端书库...") {
+        function showLoading(show, text, subText="") {
             const el = document.getElementById('loading-mask');
             if(show) {
-                el.innerText = text;
+                document.getElementById('loading-text').innerText = text;
+                document.getElementById('loading-sub').innerText = subText;
                 el.classList.remove('hidden');
-            } else {
-                el.classList.add('hidden');
-            }
+            } else { el.classList.add('hidden'); }
         }
         
-        // -----------------------------
-
+        // --- 登录/退出 ---
         async function handleLogin() {
             const codeInput = document.getElementById('card-code').value.trim();
-            
-            // 登录前先拉取最新数据
             const success = await fetchLibraryFromCloud();
             if(!success) return;
-
-            if (codeInput === ADMIN_ACCESS_CODE) {
-                switchLayer('admin-layer');
-                renderAdminBookList();
-            } else if (codeInput === USER_ACCESS_CODE) {
-                switchLayer('shelf-layer');
-                renderShelf();
-            } else {
-                alert("卡密无效，请联系管理员。");
-            }
+            if (codeInput === ADMIN_ACCESS_CODE) { switchLayer('admin-layer'); renderAdminBookList(); } 
+            else if (codeInput === USER_ACCESS_CODE) { switchLayer('shelf-layer'); renderShelf(); } 
+            else { alert("卡密无效"); }
         }
 
-        function logout() {
-            stopAudio();
-            switchLayer('login-layer');
-            document.getElementById('card-code').value = '';
-            libraryData = []; // 清空内存，防止缓存
-        }
+        function logout() { stopAudio(); switchLayer('login-layer'); document.getElementById('card-code').value = ''; libraryData = []; }
+        function copyUserCode() { navigator.clipboard.writeText(USER_ACCESS_CODE).then(() => alert("卡密已复制")); }
 
-        function copyUserCode() {
-            navigator.clipboard.writeText(USER_ACCESS_CODE).then(() => alert("卡密已复制"));
-        }
-
+        // --- 书架 & 管理 ---
         function renderShelf() {
             const container = document.getElementById('book-grid');
             container.innerHTML = '';
-            if (libraryData.length === 0) {
-                container.innerHTML = `<div class="empty-state"><h3>📭 书架空空如也</h3><p>老师正在精心准备绘本中...</p></div>`;
-                return;
-            }
+            if (libraryData.length === 0) { container.innerHTML = `<div class="empty-state"><h3>📭 书架空空如也</h3><p>老师正在准备中...</p></div>`; return; }
             libraryData.forEach(book => {
                 const cover = book.cover || (book.pages.length > 0 ? book.pages[0].img : 'https://via.placeholder.com/300x400?text=No+Cover');
                 const div = document.createElement('div');
@@ -334,7 +325,6 @@
                 container.appendChild(div);
             });
         }
-
         function showShelf() { switchLayer('shelf-layer'); renderShelf(); }
 
         function renderAdminBookList() {
@@ -361,14 +351,7 @@
 
         function createNewBook() { currentEditingBook = { id: Date.now(), title: "", cover: "", pages: [] }; openEditorUI(); }
         function editBook(index) { currentEditingBook = JSON.parse(JSON.stringify(libraryData[index])); openEditorUI(); }
-        
-        async function deleteBook(index) { 
-            if(confirm('确定删除这本绘本吗？')) { 
-                libraryData.splice(index, 1); 
-                await saveLibraryToCloud(); // 删除后同步
-                renderAdminBookList(); 
-            } 
-        }
+        async function deleteBook(index) { if(confirm('确定删除吗？')) { libraryData.splice(index, 1); await saveLibraryToCloud(); renderAdminBookList(); } }
 
         function openEditorUI() {
             document.getElementById('admin-book-list').classList.add('hidden');
@@ -381,22 +364,21 @@
             document.getElementById('new-page-text').value = '';
         }
 
-        function previewCover(input) {
+        async function previewCover(input) {
             if (input.files && input.files[0]) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    document.getElementById('edit-book-cover-preview').src = e.target.result;
-                    currentEditingBook.cover = e.target.result;
-                }
-                reader.readAsDataURL(input.files[0]);
+                try {
+                    const compressedBase64 = await compressImage(input.files[0]);
+                    document.getElementById('edit-book-cover-preview').src = compressedBase64;
+                    currentEditingBook.cover = compressedBase64;
+                } catch (e) { alert("图片处理失败"); }
             }
         }
 
         async function saveCurrentBookInfoOnly() {
             currentEditingBook.title = document.getElementById('edit-book-title').value || "未命名绘本";
             updateLocalData();
-            await saveLibraryToCloud(); // 保存后同步
-            alert("基本信息已同步到云端");
+            await saveLibraryToCloud();
+            alert("✅ 所有信息已同步到云端！");
         }
 
         function renderEditorPages() {
@@ -415,31 +397,22 @@
             });
         }
 
-        function addPageToEditor() {
+        async function addPageToEditor() {
             const fileInput = document.getElementById('new-page-img');
             const textInput = document.getElementById('new-page-text');
-            if (fileInput.files.length === 0 || !textInput.value.trim()) { alert("请完整填写本页图片和文案"); return; }
-            const reader = new FileReader();
-            reader.onload = async function(e) {
-                // 注意：Base64 字符串如果太长可能会导致数据库保存变慢
-                currentEditingBook.pages.push({ img: e.target.result, text: textInput.value.trim() });
+            if (fileInput.files.length === 0 || !textInput.value.trim()) { alert("请填写完整"); return; }
+            showLoading(true, "正在处理图片并上传...", "请稍候");
+            try {
+                const compressedBase64 = await compressImage(fileInput.files[0]);
+                currentEditingBook.pages.push({ img: compressedBase64, text: textInput.value.trim() });
                 renderEditorPages();
-                
                 updateLocalData();
-                await saveLibraryToCloud(); // 添加页后立即同步
-
+                await saveLibraryToCloud(); 
                 textInput.value = ''; fileInput.value = '';
-            };
-            reader.readAsDataURL(fileInput.files[0]);
+            } catch (e) { alert("图片上传失败"); showLoading(false); }
         }
 
-        async function deletePageFromEditor(idx) { 
-            currentEditingBook.pages.splice(idx, 1); 
-            renderEditorPages(); 
-            updateLocalData();
-            await saveLibraryToCloud(); // 删除页后立即同步
-        }
-        
+        async function deletePageFromEditor(idx) { currentEditingBook.pages.splice(idx, 1); renderEditorPages(); updateLocalData(); await saveLibraryToCloud(); }
         function closeEditor() { renderAdminBookList(); }
 
         function updateLocalData() {
@@ -448,11 +421,16 @@
             else libraryData.push(currentEditingBook);
         }
 
+        // --- 阅读器 (核心优化：预加载 + 自动翻页) ---
         function openReader(bookId) {
             currentReadingBook = libraryData.find(b => b.id === bookId);
             if (!currentReadingBook) return;
-            if (currentReadingBook.pages.length === 0) { alert("这本书还没有内容哦！"); return; }
+            if (currentReadingBook.pages.length === 0) { alert("没有内容"); return; }
+            
+            // 重置状态
             currentReadingPage = 0;
+            audioCache = {}; // 每次打开新书清空缓存
+            
             switchLayer('reader-layer');
             loadReaderPage();
         }
@@ -464,40 +442,111 @@
             document.getElementById('reader-text').innerText = page.text;
             document.getElementById('reader-page-num').innerText = currentReadingPage + 1;
             document.getElementById('reader-total').innerText = total;
+            
             const prevBtn = document.getElementById('prev-btn');
             const nextBtn = document.getElementById('next-btn');
             prevBtn.disabled = (currentReadingPage === 0);
+            
             if (currentReadingPage === total - 1) {
                 nextBtn.innerText = "🎉 已完结";
-                nextBtn.onclick = () => { if(confirm("绘本读完了，要重新开始吗？")) { currentReadingPage = 0; loadReaderPage(); } else { closeReader(); } };
+                nextBtn.onclick = () => { if(confirm("重读一遍？")) { currentReadingPage = 0; loadReaderPage(); } else { closeReader(); } };
             } else {
-                nextBtn.innerText = "下一页"; nextBtn.onclick = nextPage;
+                nextBtn.innerText = "下一页"; 
+                nextBtn.onclick = () => nextPage(false); 
             }
             stopAudio();
         }
 
-        function nextPage() { if (currentReadingPage < currentReadingBook.pages.length - 1) { currentReadingPage++; loadReaderPage(); } }
+        function nextPage(autoPlay = false) { 
+            if (currentReadingPage < currentReadingBook.pages.length - 1) { 
+                currentReadingPage++; 
+                loadReaderPage(); 
+                if(autoPlay) {
+                    setTimeout(playTTS, 500);
+                }
+            } 
+        }
+        
         function prevPage() { if (currentReadingPage > 0) { currentReadingPage--; loadReaderPage(); } }
         function closeReader() { stopAudio(); switchLayer('shelf-layer'); }
         function toggleAudio() { if (isPlaying) stopAudio(); else playTTS(); }
+
+        // --- 核心优化：预加载逻辑 ---
+        async function preloadAudio(pageIndex) {
+            // 检查边界
+            if (pageIndex >= currentReadingBook.pages.length) return;
+            // 如果已经在缓存里，直接返回
+            if (audioCache[pageIndex]) return;
+
+            const text = currentReadingBook.pages[pageIndex].text;
+            if (!text) return;
+
+            console.log(`正在预加载第 ${pageIndex+1} 页音频...`);
+            const baseUrl = "https://api.pearktrue.cn/api/freedub";
+            const params = new URLSearchParams({ text: text, role: "zh-CN-XiaoyiNeural", style: "cheerful" });
+
+            try {
+                const response = await fetch(`${baseUrl}?${params.toString()}`);
+                const data = await response.json();
+                if (data.code === 200 && data.data && data.data.audio_url) {
+                    audioCache[pageIndex] = data.data.audio_url; // 存入缓存
+                    console.log(`第 ${pageIndex+1} 页音频预加载完成`);
+                }
+            } catch (e) {
+                console.warn("预加载失败，稍后播放时会自动重试");
+            }
+        }
 
         function playTTS() {
             const text = currentReadingBook.pages[currentReadingPage].text;
             const btn = document.getElementById('play-btn');
             if (!text) return;
-            btn.innerText = "⏳ 请求中...";
-            const baseUrl = "https://api.pearktrue.cn/api/freedub";
-            const params = new URLSearchParams({ text: text, role: "zh-CN-XiaoyiNeural", style: "cheerful" });
-            fetch(`${baseUrl}?${params.toString()}`).then(response => response.json()).then(data => {
-                if (data.code === 200 && data.data && data.data.audio_url) {
-                    audioPlayer.src = data.data.audio_url;
-                    audioPlayer.play().then(() => { isPlaying = true; btn.innerText = "⏸ 停止"; }).catch(e => { btn.innerText = "❌ 播放失败"; });
-                } else { alert("语音生成失败"); btn.innerText = "🔊 播放"; }
-            }).catch(err => { alert("网络错误"); btn.innerText = "🔊 播放"; });
-            audioPlayer.onended = function() { isPlaying = false; btn.innerText = "🔊 播放"; if (currentReadingPage < currentReadingBook.pages.length - 1) { setTimeout(nextPage, 1000); } };
+            
+            // 1. 先从缓存里找
+            if (audioCache[currentReadingPage]) {
+                console.log("命中缓存，直接播放！");
+                playUrl(audioCache[currentReadingPage], btn);
+            } else {
+                // 2. 缓存没有，现场请求
+                btn.innerText = "⏳ 加载中...";
+                const baseUrl = "https://api.pearktrue.cn/api/freedub";
+                const params = new URLSearchParams({ text: text, role: "zh-CN-XiaoyiNeural", style: "cheerful" });
+                
+                fetch(`${baseUrl}?${params.toString()}`).then(response => response.json()).then(data => {
+                    if (data.code === 200 && data.data && data.data.audio_url) {
+                        audioCache[currentReadingPage] = data.data.audio_url; // 存起来下次用
+                        playUrl(data.data.audio_url, btn);
+                    } else { btn.innerText = "🔊 播放"; }
+                }).catch(err => { btn.innerText = "🔊 播放"; });
+            }
+
+            // --- 触发下一页的预加载 ---
+            // 当我们在听第 N 页时，偷偷去下载第 N+1 页
+            preloadAudio(currentReadingPage + 1);
         }
 
-        function stopAudio() { audioPlayer.pause(); audioPlayer.currentTime = 0; isPlaying = false; document.getElementById('play-btn').innerText = "🔊 播放"; }
+        function playUrl(url, btn) {
+            audioPlayer.src = url;
+            audioPlayer.play().then(() => { 
+                isPlaying = true; 
+                btn.innerText = "⏸ 停止"; 
+            }).catch(e => { btn.innerText = "❌ 失败"; });
+
+            audioPlayer.onended = function() {
+                isPlaying = false;
+                btn.innerText = "🔊 播放";
+                if (currentReadingPage < currentReadingBook.pages.length - 1) {
+                    nextPage(true); 
+                }
+            };
+        }
+
+        function stopAudio() { 
+            audioPlayer.pause(); 
+            audioPlayer.currentTime = 0; 
+            isPlaying = false; 
+            document.getElementById('play-btn').innerText = "🔊 播放"; 
+        }
     </script>
 </body>
 </html>
