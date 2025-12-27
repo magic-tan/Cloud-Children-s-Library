@@ -20,6 +20,7 @@
             font-family: "Rounded Mplus 1c", "Microsoft YaHei", sans-serif;
             background-color: var(--bg-color);
             height: 100%;
+            overflow: hidden; /* 防止整个页面出现双重滚动条 */
         }
 
         .btn {
@@ -33,6 +34,7 @@
             align-items: center;
             justify-content: center;
             gap: 5px;
+            flex-shrink: 0; /* 防止按钮被压缩 */
         }
         .btn:active { transform: scale(0.98); }
         .btn-primary { background: var(--primary-color); color: white; }
@@ -52,6 +54,14 @@
             outline: none;
         }
         input:focus, textarea:focus { border-color: var(--primary-color); }
+
+        /* 字数统计样式 */
+        .char-count {
+            text-align: right;
+            font-size: 12px;
+            color: #999;
+            margin-top: 5px;
+        }
 
         /* 加载遮罩样式 */
         #loading-mask {
@@ -77,9 +87,15 @@
         .login-box h2 { margin-bottom: 30px; color: var(--primary-color); }
         .login-input { margin-bottom: 20px; font-size: 16px; text-align: center; letter-spacing: 2px; }
 
-        #shelf-layer { padding: 20px; max-width: 1200px; margin: 0 auto; min-height: 100vh; }
+        #shelf-layer { 
+            padding: 20px; 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            height: 100vh; 
+            overflow-y: auto; /* 书架允许滚动 */
+        }
         header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
-        .shelf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 25px; }
+        .shelf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 25px; padding-bottom: 50px;}
         .book-card { background: white; border-radius: 12px; overflow: hidden; box-shadow: var(--card-shadow); cursor: pointer; transition: transform 0.2s; position: relative; }
         .book-card:hover { transform: translateY(-5px); }
         .book-cover { width: 100%; aspect-ratio: 3/4; object-fit: cover; background: #eee; }
@@ -87,7 +103,14 @@
         .book-title { font-weight: bold; color: var(--text-color); margin: 0; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .empty-state { text-align: center; color: #999; margin-top: 100px; grid-column: 1 / -1; }
 
-        #admin-layer { padding: 20px; max-width: 800px; margin: 0 auto; padding-bottom: 100px; }
+        #admin-layer { 
+            padding: 20px; 
+            max-width: 800px; 
+            margin: 0 auto; 
+            height: 100vh;
+            overflow-y: auto; /* 后台允许滚动 */
+            padding-bottom: 100px; 
+        }
         .admin-header { display: flex; flex-direction: column; margin-bottom: 20px; background: white; padding: 20px; border-radius: 10px; box-shadow: var(--card-shadow); gap: 15px; }
         .admin-header-top { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
         .admin-code-bar { background: #e8eaf6; padding: 10px; border-radius: 6px; color: #3f51b5; font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
@@ -97,12 +120,38 @@
         .page-list-item { display: flex; align-items: center; gap: 15px; background: #f9f9f9; padding: 10px; margin-bottom: 10px; border-radius: 8px; border: 1px solid #eee; }
         .page-thumb { width: 60px; height: 60px; object-fit: cover; border-radius: 4px; background: #ddd; }
 
+        /* --- 核心优化：阅读器布局 --- */
         #reader-layer { height: 100vh; width: 100vw; overflow: hidden; background: #fff; }
         .book-layout { display: flex; height: 100%; }
-        .text-panel { flex: 1; padding: 40px; display: flex; flex-direction: column; justify-content: center; align-items: center; background: #fff; position: relative; z-index: 10; }
-        .image-panel { flex: 1.5; background: #f0f0f0; display: flex; justify-content: center; align-items: center; }
+        
+        .text-panel { 
+            flex: 1; 
+            padding: 30px; 
+            display: flex; 
+            flex-direction: column; 
+            /* 关键修改：允许滚动，内容太长时不会被截断 */
+            overflow-y: auto; 
+            /* 保持内容居中，但允许顶部滚动 */
+            justify-content: flex-start; 
+            align-items: center; 
+            background: #fff; 
+            position: relative; 
+            z-index: 10;
+        }
+
+        .text-content-wrapper {
+            /* 包裹文字和按钮的容器，确保垂直居中效果 */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100%; /* 撑满高度 */
+            width: 100%;
+        }
+
+        .image-panel { flex: 1.5; background: #f0f0f0; display: flex; justify-content: center; align-items: center; overflow: hidden; }
         .image-panel img { max-width: 100%; max-height: 100%; object-fit: contain; }
-        .reader-controls { margin-top: 30px; display: flex; gap: 15px; align-items: center; }
+        .reader-controls { margin-top: 30px; display: flex; gap: 15px; align-items: center; flex-wrap: wrap; justify-content: center; }
         .nav-btn-group { display: flex; gap: 10px; }
 
         .save-bar {
@@ -116,9 +165,26 @@
 
         @media (max-width: 768px) {
             .book-layout { flex-direction: column; }
-            .image-panel { flex: 1.2; order: 1; background: #000;}
-            .text-panel { flex: 0.8; order: 2; padding: 20px; font-size: 16px;}
-            .reader-controls { margin-top: 15px; flex-wrap: wrap; justify-content: center;}
+            .image-panel { 
+                flex: 0 0 50vh; /* 固定图片高度占屏幕一半 */
+                order: 1; 
+                background: #000;
+            }
+            .text-panel { 
+                flex: 1; 
+                order: 2; 
+                padding: 20px; 
+                font-size: 16px;
+                /* 手机端关键：确保文字区域可以独立滚动 */
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch; /* iOS顺滑滚动 */
+            }
+            .text-content-wrapper {
+                /* 手机上不需要强制垂直居中，自然排列即可，方便滚动 */
+                justify-content: flex-start;
+                min-height: auto;
+                padding-bottom: 40px; /* 底部留白，防止按钮贴底 */
+            }
             .admin-header-top { flex-direction: column; align-items: flex-start; }
         }
     </style>
@@ -131,7 +197,7 @@
 
     <div id="login-layer">
         <div class="login-box">
-            <h2>☁️ 云端儿童书馆 (高清版)</h2>
+            <h2>☁️ 云端儿童书馆 (VIP版)</h2>
             <input type="text" id="card-code" class="login-input" placeholder="请输入阅读卡密">
             <br>
             <button class="btn btn-primary" style="width:100%; font-size:16px;" onclick="handleLogin()">开启阅读之旅</button>
@@ -159,7 +225,7 @@
                 <span>🔑 <strong>用户卡密：</strong> <span id="admin-view-code">VIP-8888-READ-NOW</span></span>
                 <button class="btn btn-copy" style="font-size:12px; padding:5px 10px;" onclick="copyUserCode()">复制</button>
             </div>
-            </div>
+        </div>
 
         <div id="admin-book-list">
             <button class="btn btn-primary" style="width:100%; margin-bottom:20px; padding: 15px;" onclick="createNewBook()">+ 新建绘本</button>
@@ -181,8 +247,11 @@
             <div class="editor-section" style="border-left-color: var(--accent-color);">
                 <h4>3. 新增一页</h4>
                 <input type="file" id="new-page-img" accept="image/*" style="margin-bottom: 10px;">
-                <textarea id="new-page-text" placeholder="输入本页故事文案..."></textarea>
-                <br><br>
+                
+                <textarea id="new-page-text" placeholder="输入本页故事文案 (最多200字)..." maxlength="200" oninput="updateCharCount(this)"></textarea>
+                <div class="char-count" id="char-count-display">0/200</div>
+                
+                <br>
                 <button class="btn btn-primary" onclick="addPageToEditor()">+ 确认添加此页</button>
             </div>
             
@@ -196,16 +265,18 @@
     <div id="reader-layer" class="hidden">
         <div class="book-layout">
             <div class="text-panel">
-                <div id="reader-text" style="font-size: 1.2em; line-height: 1.6; text-align: left; width: 100%;"></div>
-                <div class="reader-controls">
-                    <button class="btn btn-primary" id="play-btn" onclick="toggleAudio()">🔊 播放</button>
-                    <div class="nav-btn-group">
-                        <button class="btn btn-secondary" id="prev-btn" onclick="prevPage()">上一页</button>
-                        <button class="btn btn-primary" id="next-btn" onclick="nextPage()">下一页</button>
+                <div class="text-content-wrapper">
+                    <div id="reader-text" style="font-size: 1.2em; line-height: 1.6; text-align: left; width: 100%;"></div>
+                    <div class="reader-controls">
+                        <button class="btn btn-primary" id="play-btn" onclick="toggleAudio()">🔊 播放</button>
+                        <div class="nav-btn-group">
+                            <button class="btn btn-secondary" id="prev-btn" onclick="prevPage()">上一页</button>
+                            <button class="btn btn-primary" id="next-btn" onclick="nextPage()">下一页</button>
+                        </div>
                     </div>
+                    <button class="btn btn-secondary" style="margin-top: 20px; font-size: 12px;" onclick="closeReader()">退出阅读</button>
+                    <div style="margin-top: 15px; color:#999; font-size: 14px;">第 <span id="reader-page-num">1</span> 页 / 共 <span id="reader-total">1</span> 页</div>
                 </div>
-                <button class="btn btn-secondary" style="margin-top: 20px; font-size: 12px;" onclick="closeReader()">退出阅读</button>
-                <div style="margin-top: 15px; color:#999; font-size: 14px;">第 <span id="reader-page-num">1</span> 页 / 共 <span id="reader-total">1</span> 页</div>
             </div>
             <div class="image-panel"><img id="reader-img" src="" alt=""></div>
         </div>
@@ -243,8 +314,13 @@
             document.getElementById(layerId).classList.remove('hidden');
         }
 
+        // --- 字数统计逻辑 ---
+        function updateCharCount(textarea) {
+            const count = textarea.value.length;
+            document.getElementById('char-count-display').innerText = `${count}/200`;
+        }
+
         // --- 核心优化：均衡压缩 (Width 1024, Quality 0.6) ---
-        // 目标：图片大小控制在 100kb - 200kb 之间，保证清晰度
         function compressImage(file) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
@@ -255,18 +331,12 @@
                     img.onload = function() {
                         const canvas = document.createElement('canvas');
                         const ctx = canvas.getContext('2d');
-                        
-                        // 清晰度优化：最大宽度调整为 1024px
                         const MAX_WIDTH = 1024; 
                         let width = img.width;
                         let height = img.height;
                         if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
-                        
-                        canvas.width = width; 
-                        canvas.height = height;
+                        canvas.width = width; canvas.height = height;
                         ctx.drawImage(img, 0, 0, width, height);
-                        
-                        // 质量设为 0.6，平衡体积和画质
                         resolve(canvas.toDataURL('image/jpeg', 0.6));
                     };
                     img.onerror = reject;
@@ -292,14 +362,12 @@
 
         async function saveLibraryToCloud() {
             showLoading(true, "☁️ 正在上传到云端...", "(图片质量已优化)");
-            
             const { error } = await db.from('library_storage').upsert({ id: 1, data: libraryData });
             showLoading(false);
-            
             if (error) {
                 console.error("保存错误:", error);
                 if(error.code === '57014') {
-                    alert("⚠️ 上传超时！\n图片还是有点多，建议分批保存，或者删除一两本旧书。");
+                    alert("⚠️ 上传超时！请减少单次上传的图片数量。");
                 } else {
                     alert("保存失败！代码: " + error.code + "\n" + error.message);
                 }
@@ -389,8 +457,11 @@
             document.getElementById('edit-book-cover-preview').src = currentEditingBook.cover || 'https://via.placeholder.com/100x133?text=Cover';
             document.getElementById('edit-book-cover-input').value = '';
             renderEditorPages();
+            
+            // 重置输入框
             document.getElementById('new-page-img').value = '';
             document.getElementById('new-page-text').value = '';
+            updateCharCount(document.getElementById('new-page-text')); // 重置字数
         }
 
         async function previewCover(input) {
@@ -436,7 +507,10 @@
                 renderEditorPages();
                 updateLocalData();
                 await saveLibraryToCloud(); // 每次添加自动保存
+                
+                // 清空输入
                 textInput.value = ''; fileInput.value = '';
+                updateCharCount(textInput); // 重置字数
             } catch (e) { alert("图片上传失败"); showLoading(false); }
         }
 
